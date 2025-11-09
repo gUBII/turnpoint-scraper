@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 import puppeteer, { Page, ElementHandle } from 'puppeteer';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import * as path from 'path';
 import { spawn } from 'child_process';
 
@@ -400,22 +400,58 @@ async function tryDownloadNdisBudgetAndSplit(page: Page, clientBudgetDir: string
    WORKFLOW
    ========================= */
 
+const EMAIL_SELECTORS = [
+  'input[name="Email"]',
+  'input[name="email"]',
+  '#Email',
+  '#email',
+  'input[type="email"]',
+  'input[type="text"]',
+];
+
+const PASSWORD_SELECTORS = [
+  'input[name="Password"]',
+  'input[name="password"]',
+  '#Password',
+  '#password',
+  'input[type="password"]',
+];
+
+async function typeIntoFirstMatch(page: Page, selectors: string[], value: string) {
+  for (const selector of selectors) {
+    try {
+      await page.waitForSelector(selector, { timeout: 5000 });
+      await page.click(selector, { clickCount: 3 });
+      await page.type(selector, value, { delay: 20 });
+      return;
+    } catch {
+      // try next selector
+    }
+  }
+  throw new Error(`No element found for selectors: ${selectors.join(', ')}`);
+}
+
 async function login(page: Page) {
   if (!CREDENTIALS.email || !CREDENTIALS.password) {
     throw new Error('Missing credentials. Set TP_EMAIL and TP_PASSWORD environment variables.');
   }
-  await page.goto(LOGIN_URL, { waitUntil: 'networkidle0' });
+
+  await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
+  await waitForIdle(page);
   await dismissPasswordBanner(page);
 
-  await page.type('input[name="Email"]', CREDENTIALS.email, { delay: 20 });
-  await page.type('input[name="Password"]', CREDENTIALS.password, { delay: 20 });
+  await typeIntoFirstMatch(page, EMAIL_SELECTORS, CREDENTIALS.email);
+  await typeIntoFirstMatch(page, PASSWORD_SELECTORS, CREDENTIALS.password);
 
   await Promise.all([
-    page.click('input[type="submit"], button[type="submit"]'),
+    page.click('input[type="submit"], button[type="submit"], button[name="btnLogin"]'),
     page.waitForNavigation({ waitUntil: 'networkidle0' }),
   ]);
   await dismissPasswordBanner(page);
 }
+
+
+
 
 async function goToClients(page: Page) {
   await page.goto(CLIENTS_URL, { waitUntil: 'networkidle0' });
