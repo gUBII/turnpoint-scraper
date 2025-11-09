@@ -9,8 +9,8 @@ import { spawn } from 'child_process';
    ========================= */
 
 const CREDENTIALS = {
-  email: 'hasan@nexis365.com.au',
-  password: 'photo309',
+  email: process.env.TP_EMAIL || '',
+  password: process.env.TP_PASSWORD || '',
 };
 
 const BASE_URL = 'https://tp1.com.au';
@@ -25,8 +25,14 @@ const PACKAGE_LABELS: string[][] = [
   ['PACE - PLAN MANAGED', 'PACE-PLAN MANAGED', 'PACE PLAN'],
 ];
 
-const OUTPUT_ROOT = process.cwd();
-const HEADLESS = true;
+type HeadlessOption = boolean | 'shell';
+const OUTPUT_ROOT = process.env.OUTPUT_ROOT || process.cwd();
+const HEADLESS: HeadlessOption = (() => {
+  const v = (process.env.HEADLESS || '').toLowerCase();
+  if (v === 'false' || v === '0' || v === 'no') return false;
+  if (v === 'shell') return 'shell';
+  return true;
+})();
 
 // Budget handling
 const DOWNLOAD_NDIS_BUDGET = true;
@@ -328,8 +334,18 @@ const extractEmergencyPlan  = async (p: Page) => mergeKV(await extractFormLikeVa
    ========================= */
 
 async function enableDownloadTo(page: Page, dir: string) {
-  const client = await page.target().createCDPSession();
-  await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dir });
+  // Try modern Browser domain first, then fall back to Page domain
+  try {
+    const browserSession = await page.browser().target().createCDPSession();
+    await browserSession.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dir });
+    return;
+  } catch {}
+  try {
+    const client = await page.target().createCDPSession();
+    await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dir });
+  } catch {
+    // Ignore if not supported; downloads might still work depending on browser
+  }
 }
 
 async function runBudgetPython(xlsxFullPath: string) {
@@ -385,6 +401,9 @@ async function tryDownloadNdisBudgetAndSplit(page: Page, clientBudgetDir: string
    ========================= */
 
 async function login(page: Page) {
+  if (!CREDENTIALS.email || !CREDENTIALS.password) {
+    throw new Error('Missing credentials. Set TP_EMAIL and TP_PASSWORD environment variables.');
+  }
   await page.goto(LOGIN_URL, { waitUntil: 'networkidle0' });
   await dismissPasswordBanner(page);
 
